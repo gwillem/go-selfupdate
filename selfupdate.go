@@ -12,15 +12,10 @@ import (
 	"github.com/gwillem/urlfilecache"
 )
 
-const restartEnvVar = "SELFUPDATE_RESTARTED_2837482372346283448"
-
-/*
-
-Simple library to run cheap auto updates on Go binaries.
-
-It uses `urlfilecache` to use If-Modified-Since to check a remote server for updates
-
-*/
+const (
+	restartEnvVar           = "SELFUPDATE_RESTARTED_2837482372346283448"
+	noUpdateWhenYoungerThan = 5 * time.Second // to skip self updates on dev binaries etc
+)
 
 func update(url string) (updated bool, err error) {
 	exe, err := executable()
@@ -46,6 +41,15 @@ func update(url string) (updated bool, err error) {
 func UpdateRestart(url string) (restarted bool, err error) {
 	if os.Getenv(restartEnvVar) != "" {
 		return true, nil // we are a restarted process!
+	}
+
+	exe, err := executable()
+	if err != nil {
+		return false, fmt.Errorf("Cannot determine my own executable path, skipping update: %s", err)
+	}
+
+	if age(exe) < noUpdateWhenYoungerThan {
+		return false, fmt.Errorf("Not checking for update, I am too new (%s)", age(exe))
 	}
 
 	updated, err := update(url)
@@ -87,4 +91,8 @@ func mtime(path string) time.Time {
 		panic(err)
 	}
 	return file.ModTime().UTC()
+}
+
+func age(path string) time.Duration {
+	return time.Since(mtime(path))
 }
