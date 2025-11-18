@@ -2,10 +2,13 @@ package selfupdate
 
 import (
 	"fmt"
+	"io"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"syscall"
 	"time"
@@ -19,6 +22,7 @@ const (
 )
 
 var (
+	Log               = log.New(io.Discard, "", log.LstdFlags)
 	goBuildRegex      = regexp.MustCompile(`go-build\d+`)
 	shouldCheckForDev = true
 )
@@ -103,8 +107,21 @@ func age(path string) time.Duration {
 }
 
 func isDev() bool {
+	// cache dir such as /Users/willem/Library/Caches/go-build/35/358ddc6897af3c245cc388e59f60b74b1b275c7ebb753dbcef889336a76b6b27-d/casetool
+	if slices.Contains(strings.Split(os.Args[0], "/"), "go-build") {
+		return true
+	}
+
+	// new build such as /var/folders/tj/p1mpz8ys2wj682tkq0s17_xw0000gp/T/go-build288901995/b001/exe/casetool
 	if goBuildRegex.MatchString(filepath.Dir(os.Args[0])) {
 		return true
 	}
-	return strings.HasSuffix(os.Args[0], ".test")
+
+	// go test binary
+	if strings.HasSuffix(os.Args[0], ".test") {
+		return true
+	}
+
+	Log.Println("isDev: false (does not seem to be a go test/run binary):", os.Args[0])
+	return false
 }
