@@ -20,7 +20,7 @@ func TestUpdateRestart(t *testing.T) {
 	}
 
 	// run test http server, which returns current executable
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		fmt.Println("http test server got request!")
 		self, err := os.Executable()
 		if err != nil {
@@ -30,11 +30,11 @@ func TestUpdateRestart(t *testing.T) {
 		if err != nil {
 			panic(err)
 		}
-		defer src.Close()
+		defer src.Close() //nolint:errcheck
 
 		// send self
 		w.Header().Set("Content-Type", "application/octet-stream")
-		io.Copy(w, src)
+		_, _ = io.Copy(w, src)
 	}))
 	defer ts.Close()
 
@@ -43,6 +43,7 @@ func TestUpdateRestart(t *testing.T) {
 	selfExe, _ := executable()
 	assert.NoError(t, os.Chtimes(selfExe, pastTS, pastTS))
 
+	shouldCheckForDev = false // override "go test" detection
 	ok, err := UpdateRestart(ts.URL)
 	assert.NoError(t, err) // doesn't return the first call, but does the second
 	assert.True(t, ok)     // in new process

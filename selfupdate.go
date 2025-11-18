@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"syscall"
 	"time"
@@ -17,26 +18,26 @@ const (
 	noUpdateWhenYoungerThan = 5 * time.Second // to skip self updates on dev binaries etc
 )
 
+var (
+	goBuildRegex      = regexp.MustCompile(`go-build\d+`)
+	shouldCheckForDev = true
+)
+
 func update(url string) (updated bool, err error) {
 	exe, err := executable()
 	if err != nil {
-		return false, fmt.Errorf("Cannot determine my own executable path, skipping update: %s", err)
+		return false, fmt.Errorf("cannot determine my own executable path, skipping update: %w", err)
 	}
 
 	preTS := mtime(exe)
-	if e := urlfilecache.ToCustomPath(url, exe); e != nil {
+	if _, e := urlfilecache.ToPath(url, urlfilecache.WithPath(exe)); e != nil {
 		return false, e
 	}
 
-	postTS := mtime(exe)
-	if preTS != postTS {
-		return true, nil // update installed
-	} else {
-		return false, nil // no update found
-	}
+	return preTS != mtime(exe), nil
 }
 
-// Replaces current executable & process with an newer one from given URL.
+// UpdateRestart replaces current executable & process with a newer one from given URL.
 // Will run updated bin with same cli args and env vars.
 func UpdateRestart(url string) (restarted bool, err error) {
 	if os.Getenv(restartEnvVar) != "" {
@@ -45,11 +46,15 @@ func UpdateRestart(url string) (restarted bool, err error) {
 
 	exe, err := executable()
 	if err != nil {
-		return false, fmt.Errorf("Cannot determine my own executable path, skipping update: %s", err)
+		return false, fmt.Errorf("cannot determine my own executable path, skipping update: %w", err)
 	}
 
 	if age(exe) < noUpdateWhenYoungerThan {
-		return false, fmt.Errorf("Not checking for update, I am too new (%s)", age(exe))
+		return false, fmt.Errorf("not checking for update, I am too new (%s)", age(exe))
+	}
+
+	if shouldCheckForDev && isDev() {
+		return false, fmt.Errorf("not checking for update, I am a dev binary")
 	}
 
 	updated, err := update(url)
@@ -65,7 +70,7 @@ func UpdateRestart(url string) (restarted bool, err error) {
 	newEnv = append(newEnv, restartEnvVar+"=1")
 
 	if e := syscall.Exec(os.Args[0], os.Args, newEnv); e != nil {
-		return false, fmt.Errorf("Could not relaunch self: %s", e)
+		return false, fmt.Errorf("could not relaunch self: %w", e)
 	}
 	return false, nil // never reached
 }
@@ -95,4 +100,11 @@ func mtime(path string) time.Time {
 
 func age(path string) time.Duration {
 	return time.Since(mtime(path))
+}
+
+func isDev() bool {
+	if goBuildRegex.MatchString(filepath.Dir(os.Args[0])) {
+		return true
+	}
+	return strings.HasSuffix(os.Args[0], ".test")
 }
