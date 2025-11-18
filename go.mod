@@ -3,7 +3,7 @@ module github.com/gwillem/go-selfupdate
 go 1.23
 
 require (
-	github.com/gwillem/urlfilecache v0.0.2
+	github.com/gwillem/urlfilecache v0.0.3
 	github.com/stretchr/testify v1.10.0
 )
 
