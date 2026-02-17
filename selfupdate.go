@@ -27,7 +27,7 @@ var (
 	shouldCheckForDev = true
 )
 
-func update(url string) (updated bool, err error) {
+func download(url string) (updated bool, err error) {
 	exe, err := executable()
 	if err != nil {
 		return false, fmt.Errorf("cannot determine my own executable path, skipping update: %w", err)
@@ -41,6 +41,32 @@ func update(url string) (updated bool, err error) {
 	return preTS != mtime(exe), nil
 }
 
+func preflight() (exe string, err error) {
+	exe, err = executable()
+	if err != nil {
+		return "", fmt.Errorf("cannot determine my own executable path, skipping update: %w", err)
+	}
+
+	if age(exe) < noUpdateWhenYoungerThan {
+		return "", fmt.Errorf("not checking for update, I am too new (%s)", age(exe))
+	}
+
+	if shouldCheckForDev && isDev() {
+		return "", fmt.Errorf("not checking for update, I am a dev binary")
+	}
+
+	return exe, nil
+}
+
+// Update replaces the current executable with a newer one from the given URL.
+// Returns true if the binary was updated.
+func Update(url string) (updated bool, err error) {
+	if _, err := preflight(); err != nil {
+		return false, err
+	}
+	return download(url)
+}
+
 // UpdateRestart replaces current executable & process with a newer one from given URL.
 // Will run updated bin with same cli args and env vars.
 func UpdateRestart(url string) (restarted bool, err error) {
@@ -48,20 +74,12 @@ func UpdateRestart(url string) (restarted bool, err error) {
 		return true, nil // we are a restarted process!
 	}
 
-	exe, err := executable()
+	exe, err := preflight()
 	if err != nil {
-		return false, fmt.Errorf("cannot determine my own executable path, skipping update: %w", err)
+		return false, err
 	}
 
-	if age(exe) < noUpdateWhenYoungerThan {
-		return false, fmt.Errorf("not checking for update, I am too new (%s)", age(exe))
-	}
-
-	if shouldCheckForDev && isDev() {
-		return false, fmt.Errorf("not checking for update, I am a dev binary")
-	}
-
-	updated, err := update(url)
+	updated, err := download(url)
 	if err != nil {
 		return false, err
 	}
@@ -73,7 +91,7 @@ func UpdateRestart(url string) (restarted bool, err error) {
 	newEnv := os.Environ()
 	newEnv = append(newEnv, restartEnvVar+"=1")
 
-	if e := syscall.Exec(os.Args[0], os.Args, newEnv); e != nil {
+	if e := syscall.Exec(exe, os.Args, newEnv); e != nil {
 		return false, fmt.Errorf("could not relaunch self: %w", e)
 	}
 	return false, nil // never reached
